@@ -12,6 +12,7 @@
 | **构建特征库** | 选择本地文件夹，自动扫描其中的 JPG / JPEG / JFIF / PNG 图像，提取视觉特征与文字描述并持久化存储 |
 | **以图搜图** | 选择一张查询图片，在已建库的图像中按相似度排序返回最匹配的结果（支持自定义返回数量） |
 | **清理无效数据** | 自动移除特征库中已不存在的文件记录，保持数据库整洁 |
+| **推理设备切换** | 在状态栏右下角可随时切换 CUDA（GPU）或 CPU 推理，建库与查询可分别使用不同设备 |
 | **资源管理器定位** | 双击检索结果行，直接在 Windows 资源管理器中定位对应文件 |
 
 ---
@@ -22,7 +23,7 @@
 - **UI 库**：[Vorcyc.RoundUI](https://www.nuget.org/packages/Vorcyc.RoundUI) — 圆角现代化 WPF 控件（Light 主题）
 - **图像特征提取**：[DINOv2](https://github.com/facebookresearch/dinov2)（量化 ONNX 模型 `domp_v2_q4.onnx`）— 输入 518×518，输出 1024 维 CLS token embedding（L2 归一化）
 - **图像描述生成**：[Florence2](https://nuget.org/packages/Florence2) — 微软多模态大模型，自动生成图像文字描述（Caption）
-- **ONNX 推理**：[Microsoft.ML.OnnxRuntime.Gpu.Windows](https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime.Gpu.Windows)（CUDA GPU 加速）
+- **ONNX 推理**：[Microsoft.ML.OnnxRuntime.Gpu.Windows](https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime.Gpu.Windows)（支持 CUDA GPU 加速，可在运行时切换 CPU 回退）
 - **图像处理**：[SixLabors.ImageSharp](https://www.nuget.org/packages/SixLabors.ImageSharp) — 跨平台图像解码与预处理（Center Crop + ImageNet 归一化）
 - **向量数据库**：[Vorcyc.Quiver](https://www.nuget.org/packages/Vorcyc.Quiver) — 轻量级嵌入式向量数据库，支持向量相似度搜索（Binary 存储，WAL 写前日志）
 - **系统集成**：[WindowsAPICodePack](https://www.nuget.org/packages/WindowsAPICodePack) — 文件夹选择对话框
@@ -74,6 +75,10 @@ ImageContentRetrieval_v4/
 ```
 选择文件夹
     |
+读取当前推理设备选项（CUDA / CPU）
+    |
+创建局部 SessionOptions + DinoV2Embedder + FlorencCaptioning
+    |
 扫描图像文件（JPG / JPEG / JFIF / PNG）
     |
 排除已建库文件（去重）
@@ -89,6 +94,8 @@ ImageContentRetrieval_v4/
     每 200 条增量保存至数据库
     |
 全部完成后最终保存至 Quiver 向量数据库
+    |
+释放局部 Embedder 与 SessionOptions
 ```
 
 ### 检索流程
@@ -113,7 +120,7 @@ DINOv2 提取查询图片的 1024 维特征
 
 - **操作系统**：Windows 7+
 - **运行时**：.NET 10 Runtime
-- **GPU 加速**（推荐）：NVIDIA GPU + CUDA（通过 `OnnxRuntime.Gpu` 启用）
+- **GPU 加速**（推荐）：NVIDIA GPU + CUDA（通过 `OnnxRuntime.Gpu` 启用）；无 NVIDIA GPU 时可在状态栏切换为 CPU 模式
 - **ONNX 模型**：需将模型文件放置于 `model_zoo/` 目录下（构建时自动复制到输出目录），获取方式见下方「模型获取」
 
 ---

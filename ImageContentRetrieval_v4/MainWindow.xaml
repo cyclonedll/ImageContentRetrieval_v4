@@ -71,7 +71,7 @@
         </Grid>
         
 
-        <StatusBar Grid.Row="3">
+        <!--<StatusBar Grid.Row="3">
             <StatusBar.Background>
                 <LinearGradientBrush StartPoint="0, 0" EndPoint="0, 1" Opacity=".1">
                     <GradientStop Offset="0" Color="Transparent" />                  
@@ -81,6 +81,46 @@
             </StatusBar.Background>
             <ProgressBar x:Name="processBar1" Width="100" Height="15"/>
             <Label x:Name="lblInfo">Status</Label>
+        </StatusBar>-->
+
+        <StatusBar Grid.Row="3">
+            <StatusBar.Background>
+                <LinearGradientBrush StartPoint="0, 0" EndPoint="0, 1" Opacity=".1">
+                    <GradientStop Offset="0" Color="Transparent" />
+                    <GradientStop Offset=".7" Color="{DynamicResource AccentColor}" />
+                    <GradientStop Offset="1" Color="{DynamicResource AccentColor}" />
+                </LinearGradientBrush>
+            </StatusBar.Background>
+
+            <StatusBar.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                    </Grid>
+                </ItemsPanelTemplate>
+            </StatusBar.ItemsPanel>
+
+            <StatusBarItem Grid.Column="0">
+                <ProgressBar x:Name="processBar1" Width="100" Height="15"/>
+            </StatusBarItem>
+            <StatusBarItem Grid.Column="1">
+                <Label x:Name="lblInfo">Status</Label>
+            </StatusBarItem>
+            <StatusBarItem Grid.Column="3" HorizontalAlignment="Right">
+                <StackPanel Orientation="Horizontal">
+                    <Label VerticalAlignment="Center" Padding="0,0,5,0">推理设备</Label>
+                    <ComboBox x:Name="cbDevice" Width="100" Height="23" SelectedIndex="0"
+                              SelectionChanged="cbDevice_SelectionChanged">
+                        <ComboBoxItem>CUDA</ComboBoxItem>
+                        <ComboBoxItem>CPU</ComboBoxItem>
+                    </ComboBox>
+                </StackPanel>
+            </StatusBarItem>
         </StatusBar>
     </Grid>
 </ui:RoundNormalWindow>

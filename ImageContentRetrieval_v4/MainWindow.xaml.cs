@@ -1,4 +1,5 @@
 ﻿using ImageContentRetrieval_v4.QuiverDb;
+using Microsoft.ML.OnnxRuntime;
 using Microsoft.Win32;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using System.Windows;
@@ -27,28 +28,47 @@ public partial class MainWindow : RoundNormalWindow
     /// <summary>UI 线程同步上下文，用于从后台线程安全地更新界面。</summary>
     private System.Threading.SynchronizationContext _syncContext;
 
-    /// <summary>DINOv2 模型封装，负责将图像提取为 1024 维特征向量。</summary>
+    /// <summary>DINOv2 模型封装（全局，仅用于查询检索）。</summary>
     private DinoV2Embedder _embedder;
 
+    private SessionOptions _sessionOptions;
+
     /// <summary>
-    /// 窗口加载完成后初始化：加载向量数据库并实例化 DINOv2 模型。
+    /// 根据当前 cbDevice 选择创建 SessionOptions。
+    /// </summary>
+    private SessionOptions CreateSessionOptions()
+    {
+        var options = new SessionOptions
+        {
+            GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
+        };
+        var device = (cbDevice.SelectedItem as ComboBoxItem)?.Content?.ToString();
+        if (device == "CUDA")
+            options.AppendExecutionProvider_CUDA(0);
+        return options;
+    }
+
+    /// <summary>
+    /// 窗口加载完成后初始化：加载向量数据库并实例化 DINOv2 模型（用于查询）。
     /// 若初始化失败则提示错误并关闭应用。
     /// </summary>
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         _syncContext = System.Threading.SynchronizationContext.Current;
 
-        // 初始化期间禁用交互，隐藏进度条
         this.IsEnabled = false;
         processBar1.Visibility = Visibility.Collapsed;
 
         try
         {
             await _db.LoadAsync();
-            _embedder = new();
+
+            _sessionOptions = CreateSessionOptions();
+            _embedder = new(_sessionOptions);
 
             this.IsEnabled = true;
-            lblInfo.Content = $"已建模 {_db.Images.Count} 个图像文件";
+            var device = (cbDevice.SelectedItem as ComboBoxItem)?.Content?.ToString();
+            lblInfo.Content = $"已建模 {_db.Images.Count} 个图像文件（{device}）";
         }
         catch (Exception exp)
         {
@@ -59,12 +79,10 @@ public partial class MainWindow : RoundNormalWindow
     }
 
     /// <summary>
-    /// 构建特征库：选择文件夹后，扫描图像文件并逐一提取 DINOv2 特征与 Florence2 描述，
-    /// 写入向量数据库。已存在的文件会自动跳过，每处理 100 张自动保存一次。
+    /// 构建特征库：选择文件夹后，使用局部 Embedder 逐一提取特征与描述，写入数据库。
     /// </summary>
     private async void btnBuild_Click(object sender, RoutedEventArgs e)
     {
-        // 弹出文件夹选择对话框
         var dialog = new CommonOpenFileDialog
         {
             IsFolderPicker = true
@@ -72,22 +90,25 @@ public partial class MainWindow : RoundNormalWindow
 
         if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
         {
-            // 禁用所有按钮，显示进度条
+            // 在禁用界面前读取设备选项
+            using var buildOptions = CreateSessionOptions();
+
+            // 禁用界面（含 cbDevice），显示进度条
             this.IsEnabled = btnCleanup.IsEnabled = btnBuild.IsEnabled = btnRetrieval.IsEnabled = false;
             processBar1.Visibility = Visibility.Visible;
 
-            var captioning = await FlorencCaptioning.CreateAsync();
+            // 构建专用的局部 Embedder，用完即释放
+            using var buildEmbedder = new DinoV2Embedder(buildOptions);
+            var captioning = await FlorencCaptioning.CreateAsync(buildOptions);
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
-            // 递归扫描文件夹下所有支持格式的图像文件
             var folder = dialog.FileName;
             var files = Directory.EnumerateFiles(folder, "*.jpg", SearchOption.AllDirectories);
             files = files.Concat(Directory.EnumerateFiles(folder, "*.jpeg", SearchOption.AllDirectories));
             files = files.Concat(Directory.EnumerateFiles(folder, "*.jfif", SearchOption.AllDirectories));
             files = files.Concat(Directory.EnumerateFiles(folder, "*.png", SearchOption.AllDirectories));
 
-            // 排除数据库中已存在的文件，避免重复提取特征
             files = IOHelper.Except(files, _db.Images);
 
             var totalCount = files.Count();
@@ -95,25 +116,21 @@ public partial class MainWindow : RoundNormalWindow
 
             processBar1.Maximum = totalCount;
 
-            // 在后台线程中逐一处理图像
             await Task.Run(async () =>
             {
                 foreach (var file in files)
                 {
-                    // 提取 DINOv2 特征向量与 Florence2 图像描述，组装为数据实体
                     var imageDb = new ImageDb
                     {
                         Filename = file,
-                        ImageFeature = _embedder.ExtractEmbedding(file),
+                        ImageFeature = buildEmbedder.ExtractEmbedding(file),
                         Caption = captioning.GetCaption(file)
                     };
                     _db.Images.Add(imageDb);
                     proceedCount++;
 
-                    // 每 100 条批量保存一次，防止意外中断导致大量数据丢失
                     if (proceedCount % 200 == 0) await _db.SaveChangesAsync();
 
-                    // 通过同步上下文回到 UI 线程更新进度
                     _syncContext.Post(state =>
                     {
                         processBar1.Value = proceedCount;
@@ -122,20 +139,16 @@ public partial class MainWindow : RoundNormalWindow
                 }
             });
 
-            // 最终保存剩余未落盘的数据
             await _db.SaveChangesAsync();
 
             sw.Stop();
 
             lblInfo.Content = $"已建模 {_db.Images.Count} 个图像文件";
 
-            var newCount = proceedCount;
             Vorcyc.RoundUI.Windows.Controls.ModernDialog.ShowMessage($"成功对 {proceedCount} 个文件建库，耗时 {sw.Elapsed}", "建库完成", MessageBoxButton.OK);
 
-            // 恢复按钮状态，隐藏进度条
             this.IsEnabled = btnCleanup.IsEnabled = btnBuild.IsEnabled = btnRetrieval.IsEnabled = true;
             processBar1.Visibility = Visibility.Collapsed;
-
         }
     }
 
@@ -212,7 +225,31 @@ public partial class MainWindow : RoundNormalWindow
         this.IsEnabled = btnCleanup.IsEnabled = btnRetrieval.IsEnabled = btnBuild.IsEnabled = true;
     }
 
+    /// <summary>
+    /// 切换推理设备时，重建全局 SessionOptions 和 Embedder。
+    /// </summary>
+    private void cbDevice_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // 初始化完成前忽略（Loaded 中会自行创建）
+        if (_embedder is null)
+            return;
 
+        try
+        {
+            _embedder.Dispose();
+            _sessionOptions.Dispose();
+
+            _sessionOptions = CreateSessionOptions();
+            _embedder = new(_sessionOptions);
+
+            var device = (cbDevice.SelectedItem as ComboBoxItem)?.Content?.ToString();
+            lblInfo.Content = $"已建模 {_db.Images.Count} 个图像文件（{device}）";
+        }
+        catch (Exception exp)
+        {
+            MessageBox.Show($"切换设备失败：{exp.Message}");
+        }
+    }
 
     #region Helper Methods
 

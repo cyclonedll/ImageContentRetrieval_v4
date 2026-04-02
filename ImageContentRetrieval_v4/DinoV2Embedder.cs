@@ -14,13 +14,9 @@ public class DinoV2Embedder : IDisposable
     private const int InputSize = 518;        // DINOv2-large 推荐分辨率
     private const string _modelPath = "./model_zoo/DinoV2/domp_v2_q4.onnx";
 
-    public DinoV2Embedder()
+    public DinoV2Embedder(SessionOptions options )
     {
-        var options = new SessionOptions();
-        options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
-        // GPU 加速建议（根据你的硬件选择）：
-        options.AppendExecutionProvider_CUDA(0);     // NVIDIA GPU
-        //options.AppendExecutionProvider_DML(0);      // Windows DirectML
+
 
         _session = new InferenceSession(_modelPath, options);
 
