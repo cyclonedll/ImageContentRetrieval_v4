@@ -1,0 +1,23 @@
+﻿<Application x:Class="ImageContentRetrieval_v4.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:ImageContentRetrieval_v4"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+
+            <Color x:Key="AccentColor">#556a78</Color>
+
+            <!--<Color x:Key="AccentColor">Orange</Color>-->
+
+            <!--修改全局字体-->
+            <FontFamily x:Key="DefaultFontFamily">Microsoft YaHei</FontFamily>
+
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Vorcyc.RoundUI;component/Assets/RoundUI.xaml"/>
+                <ResourceDictionary Source="/Vorcyc.RoundUI;component/Assets/RoundUI.Light.xaml"/>
+                <ResourceDictionary Source="/Vorcyc.RoundUI;component/Assets/Icons.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

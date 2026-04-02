@@ -361,3 +361,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/ImageContentRetrieval_v4/model_zoo/DinoV2/domp_v2_q4.onnx
+/ImageContentRetrieval_v4/model_zoo/florence2/decoder_model_merged.onnx
+/ImageContentRetrieval_v4/model_zoo/florence2/embed_tokens.onnx
+/ImageContentRetrieval_v4/model_zoo/florence2/encoder_model.onnx
+/ImageContentRetrieval_v4/model_zoo/florence2/vision_encoder.onnx
