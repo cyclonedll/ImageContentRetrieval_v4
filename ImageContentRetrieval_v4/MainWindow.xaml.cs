@@ -5,9 +5,13 @@ using Microsoft.WindowsAPICodePack.Dialogs;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Shell;
 using Vorcyc.Quiver;
 using Vorcyc.RoundUI.Windows.Controls;
+using Brushes = System.Windows.Media.Brushes;
+using Color = System.Windows.Media.Color;
 
 namespace ImageContentRetrieval_v4;
 
@@ -20,6 +24,7 @@ public partial class MainWindow : RoundNormalWindow
     {
         InitializeComponent();
         this.Loaded += MainWindow_Loaded;
+        this.TaskbarItemInfo = new TaskbarItemInfo();
     }
 
     /// <summary>向量数据库上下文，持久化存储图像特征与描述。</summary>
@@ -32,6 +37,9 @@ public partial class MainWindow : RoundNormalWindow
     private DinoV2Embedder _embedder;
 
     private SessionOptions _sessionOptions;
+
+    /// <summary>用于取消建库操作的令牌源。</summary>
+    private CancellationTokenSource? _buildCts;
 
     /// <summary>
     /// 根据当前 cbDevice 选择创建 SessionOptions。
@@ -80,46 +88,46 @@ public partial class MainWindow : RoundNormalWindow
 
     /// <summary>
     /// 构建特征库：选择文件夹后，使用局部 Embedder 逐一提取特征与描述，写入数据库。
+    /// 支持中途取消，已处理部分自动保存。
     /// </summary>
     private async void btnBuild_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new CommonOpenFileDialog
+        var dialog = new CommonOpenFileDialog { IsFolderPicker = true };
+        if (dialog.ShowDialog() != CommonFileDialogResult.Ok) return;
+
+        // 在禁用界面前读取设备选项
+        using var buildOptions = CreateSessionOptions();
+
+        SetBuildingUI(true);
+        _buildCts = new CancellationTokenSource();
+
+        // 构建专用的局部 Embedder，用完即释放
+        using var buildEmbedder = new DinoV2Embedder(buildOptions);
+        var captioning = await FlorencCaptioning.CreateAsync(buildOptions);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        var folder = dialog.FileName;
+        var extensions = new[] { "*.jpg", "*.jpeg", "*.jfif", "*.png" };
+        var files = extensions.SelectMany(ext =>
+            Directory.EnumerateFiles(folder, ext, SearchOption.AllDirectories));
+
+        // 一次性物化列表，避免重复枚举
+        var filesList = IOHelper.Except(files, _db.Images).ToList();
+        var totalCount = filesList.Count;
+        int proceedCount = 0;
+        processBar1.Maximum = totalCount;
+
+        bool cancelled = false;
+
+        try
         {
-            IsFolderPicker = true
-        };
-
-        if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
-        {
-            // 在禁用界面前读取设备选项
-            using var buildOptions = CreateSessionOptions();
-
-            // 禁用界面（含 cbDevice），显示进度条
-            this.IsEnabled = btnCleanup.IsEnabled = btnBuild.IsEnabled = btnRetrieval.IsEnabled = false;
-            processBar1.Visibility = Visibility.Visible;
-
-            // 构建专用的局部 Embedder，用完即释放
-            using var buildEmbedder = new DinoV2Embedder(buildOptions);
-            var captioning = await FlorencCaptioning.CreateAsync(buildOptions);
-
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-
-            var folder = dialog.FileName;
-            var files = Directory.EnumerateFiles(folder, "*.jpg", SearchOption.AllDirectories);
-            files = files.Concat(Directory.EnumerateFiles(folder, "*.jpeg", SearchOption.AllDirectories));
-            files = files.Concat(Directory.EnumerateFiles(folder, "*.jfif", SearchOption.AllDirectories));
-            files = files.Concat(Directory.EnumerateFiles(folder, "*.png", SearchOption.AllDirectories));
-
-            files = IOHelper.Except(files, _db.Images);
-
-            var totalCount = files.Count();
-            int proceedCount = 0;
-
-            processBar1.Maximum = totalCount;
-
             await Task.Run(async () =>
             {
-                foreach (var file in files)
+                foreach (var file in filesList)
                 {
+                    _buildCts.Token.ThrowIfCancellationRequested();
+
                     var imageDb = new ImageDb
                     {
                         Filename = file,
@@ -131,25 +139,48 @@ public partial class MainWindow : RoundNormalWindow
 
                     if (proceedCount % 200 == 0) await _db.SaveChangesAsync();
 
-                    _syncContext.Post(state =>
+                    _syncContext.Post(_ =>
                     {
                         processBar1.Value = proceedCount;
                         lblInfo.Content = $"正在对新图像文件建模：({proceedCount}/{totalCount})";
+                        if (totalCount > 0)
+                            TaskbarItemInfo.ProgressValue = (double)proceedCount / totalCount;
                     }, null);
                 }
-            });
-
-            await _db.SaveChangesAsync();
-
-            sw.Stop();
-
-            lblInfo.Content = $"已建模 {_db.Images.Count} 个图像文件";
-
-            Vorcyc.RoundUI.Windows.Controls.ModernDialog.ShowMessage($"成功对 {proceedCount} 个文件建库，耗时 {sw.Elapsed}", "建库完成", MessageBoxButton.OK);
-
-            this.IsEnabled = btnCleanup.IsEnabled = btnBuild.IsEnabled = btnRetrieval.IsEnabled = true;
-            processBar1.Visibility = Visibility.Collapsed;
+            }, _buildCts.Token);
         }
+        catch (OperationCanceledException)
+        {
+            cancelled = true;
+        }
+
+        await _db.SaveChangesAsync();
+        sw.Stop();
+
+        SetBuildingUI(false);
+        _buildCts?.Dispose();
+        _buildCts = null;
+
+        lblInfo.Content = $"已建模 {_db.Images.Count} 个图像文件";
+
+        if (cancelled)
+            ModernDialog.ShowMessage($"建库已取消。已处理 {proceedCount} 个文件，耗时 {sw.Elapsed}", "建库取消", MessageBoxButton.OK);
+        else
+            ModernDialog.ShowMessage($"成功对 {proceedCount} 个文件建库，耗时 {sw.Elapsed}", "建库完成", MessageBoxButton.OK);
+    }
+
+    /// <summary>取消正在进行的建库操作。</summary>
+    private void btnCancel_Click(object sender, RoutedEventArgs e) => _buildCts?.Cancel();
+
+    /// <summary>切换建库 / 空闲状态的界面元素。</summary>
+    private void SetBuildingUI(bool building)
+    {
+        btnBuild.IsEnabled = btnCleanup.IsEnabled = btnRetrieval.IsEnabled = cbDevice.IsEnabled = !building;
+        btnCancel.Visibility = building ? Visibility.Visible : Visibility.Collapsed;
+        processBar1.Visibility = building ? Visibility.Visible : Visibility.Collapsed;
+        TaskbarItemInfo.ProgressState = building
+            ? TaskbarItemProgressState.Normal
+            : TaskbarItemProgressState.None;
     }
 
     /// <summary>
@@ -170,24 +201,32 @@ public partial class MainWindow : RoundNormalWindow
 
         if (ofd.ShowDialog() == true)
         {
-            // 提取查询图片的特征向量
-            var query_feature = _embedder.ExtractEmbedding(ofd.FileName);
-
-            // 校验用户输入的返回数量
-            if (!int.TryParse(cbReturnCount.Text, out int return_count))
-            {
-                MessageBox.Show("请输入有效数字！");
-                return;
-            }
-
-            // 在向量数据库中执行相似度搜索
-            var result = await _db.Images.SearchAsync(e => e.ImageFeature, query_feature, return_count, default);
-
-            dg1.ItemsSource = result;
-
-            // 以字节流方式加载图片，避免文件被锁定
             imgSource.Source = ReadImage(ofd.FileName);
+            await PerformRetrievalAsync(ofd.FileName);
         }
+    }
+
+    /// <summary>
+    /// 执行以图搜图检索：提取指定图片的特征向量并在数据库中搜索相似结果。
+    /// </summary>
+    private async Task PerformRetrievalAsync(string imageFilePath)
+    {
+        if (_db.Images.Count == 0)
+        {
+            MessageBox.Show("特征库无有效项，请先建库！");
+            return;
+        }
+
+        var query_feature = _embedder.ExtractEmbedding(imageFilePath);
+
+        if (!int.TryParse(cbReturnCount.Text, out int return_count))
+        {
+            MessageBox.Show("请输入有效数字！");
+            return;
+        }
+
+        var result = await _db.Images.SearchAsync(e => e.ImageFeature, query_feature, return_count, default);
+        dg1.ItemsSource = result;
     }
 
     /// <summary>
@@ -217,12 +256,12 @@ public partial class MainWindow : RoundNormalWindow
     /// </summary>
     private async void btnCleanup_Click(object sender, RoutedEventArgs e)
     {
-        this.IsEnabled = btnCleanup.IsEnabled = btnBuild.IsEnabled = btnRetrieval.IsEnabled = false;
+        btnBuild.IsEnabled = btnCleanup.IsEnabled = btnRetrieval.IsEnabled = false;
 
         await IOHelper.CleanupAsync(_db);
 
         lblInfo.Content = $"已建模 {_db.Images.Count} 个图像文件";
-        this.IsEnabled = btnCleanup.IsEnabled = btnRetrieval.IsEnabled = btnBuild.IsEnabled = true;
+        btnBuild.IsEnabled = btnCleanup.IsEnabled = btnRetrieval.IsEnabled = true;
     }
 
     /// <summary>
@@ -251,6 +290,84 @@ public partial class MainWindow : RoundNormalWindow
         }
     }
 
+    #region Drag & Drop（拖放 + 高亮反馈）
+
+    private void QueryImage_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    /// <summary>拖入时高亮边框。</summary>
+    private void QueryImage_DragEnter(object sender, DragEventArgs e)
+    {
+        if (sender is Border border && e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            border.BorderThickness = new Thickness(2);
+            border.Background = new SolidColorBrush(Color.FromArgb(25, 85, 106, 120));
+        }
+    }
+
+    /// <summary>拖离时恢复边框。</summary>
+    private void QueryImage_DragLeave(object sender, DragEventArgs e)
+    {
+        ResetDropZoneVisual();
+    }
+
+    /// <summary>
+    /// 将图片文件拖放到查询区域后自动执行检索。
+    /// </summary>
+    private async void QueryImage_Drop(object sender, DragEventArgs e)
+    {
+        ResetDropZoneVisual();
+
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+
+        var files = (string[])e.Data.GetData(DataFormats.FileDrop)!;
+        var file = files.FirstOrDefault(f =>
+            f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+            f.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+            f.EndsWith(".jfif", StringComparison.OrdinalIgnoreCase) ||
+            f.EndsWith(".png", StringComparison.OrdinalIgnoreCase));
+
+        if (file is null) return;
+
+        imgSource.Source = ReadImage(file);
+        await PerformRetrievalAsync(file);
+    }
+
+    private void ResetDropZoneVisual()
+    {
+        dropZone.BorderThickness = new Thickness(1);
+        dropZone.Background = Brushes.Transparent;
+    }
+
+    #endregion
+
+    #region 键盘快捷键
+
+    /// <summary>Ctrl+B 建库，Ctrl+R 检索。</summary>
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.Control) return;
+
+        switch (e.Key)
+        {
+            case Key.B when btnBuild.IsEnabled:
+                btnBuild_Click(sender, e);
+                e.Handled = true;
+                break;
+            case Key.R when btnRetrieval.IsEnabled:
+                btnRetrieval_Click(sender, e);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    #endregion
+
     #region Helper Methods
 
     /// <summary>
@@ -268,10 +385,9 @@ public partial class MainWindow : RoundNormalWindow
         bi.CacheOption = BitmapCacheOption.OnLoad;
         bi.StreamSource = imageStream;
         bi.EndInit();
+        bi.Freeze();
         return bi;
     }
-
-
 
     #endregion
 

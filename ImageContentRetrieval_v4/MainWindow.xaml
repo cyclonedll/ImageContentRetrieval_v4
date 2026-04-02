@@ -6,120 +6,164 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:ImageContentRetrieval_v4"
         mc:Ignorable="d"
-        Height="600" Width="1000"
+        Height="700" Width="1200"
         WindowStartupLocation="CenterScreen"
         Title="Vorcyc Image Content Retrieval v4"
-        TitleLocation="Left">
+        TitleLocation="Left"
+        PreviewKeyDown="Window_PreviewKeyDown">
     <Window.Resources>
-  
+        <local:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
+        <local:FilePathToThumbnailConverter x:Key="ThumbnailConverter"/>
+        <SolidColorBrush x:Key="SubtleBorderBrush" Color="{DynamicResource AccentColor}" Opacity="0.3"/>
     </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="160" />
-            <RowDefinition Height="auto" />
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-         <!--顶部按钮-->
-        <Grid Grid.Row="0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="auto" />
-            </Grid.ColumnDefinitions>
+        <!-- ===== 顶部工具栏 ===== -->
+        <Border Grid.Row="0" Padding="8" BorderThickness="0,0,0,1"
+                BorderBrush="{StaticResource SubtleBorderBrush}">
+            <DockPanel LastChildFill="False">
+                <!-- 左侧：建库 / 取消 / 清理 -->
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <Button x:Name="btnBuild" Margin="5" Padding="16,6" Click="btnBuild_Click"
+                            ToolTip="选择文件夹并提取图像特征向量 (Ctrl+B)">📁 构建特征库</Button>
+                    <Button x:Name="btnCancel" Margin="5" Padding="16,6" Click="btnCancel_Click"
+                            Visibility="Collapsed" ToolTip="取消当前建库操作"
+                            Foreground="OrangeRed">⏹ 取消建库</Button>
+                    <Button x:Name="btnCleanup" Margin="5" Padding="16,6" Click="btnCleanup_Click"
+                            ToolTip="移除数据库中已不存在的文件记录">🧹 清理无效数据</Button>
+                </StackPanel>
+                <!-- 右侧：检索 / 设置 -->
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" Margin="0,0,10,0">
+                    <Label VerticalAlignment="Center" Padding="0,0,5,0">推理设备</Label>
+                    <ComboBox x:Name="cbDevice" Width="90" Height="25" SelectedIndex="0"
+                              SelectionChanged="cbDevice_SelectionChanged">
+                        <ComboBoxItem>CUDA</ComboBoxItem>
+                        <ComboBoxItem>CPU</ComboBoxItem>
+                    </ComboBox>
+                    <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="10,4"/>
+                    <Button x:Name="btnRetrieval" Margin="5" Padding="16,6" Click="btnRetrieval_Click"
+                            ToolTip="选择一张图片进行相似度检索 (Ctrl+R)">🔍 以图搜图</Button>
+                    <Label VerticalAlignment="Center" Margin="5,0,3,0">返回数</Label>
+                    <ComboBox x:Name="cbReturnCount" IsEditable="True" Width="70" Height="25" SelectedIndex="0">
+                        <ComboBoxItem>10</ComboBoxItem>
+                        <ComboBoxItem>50</ComboBoxItem>
+                        <ComboBoxItem>100</ComboBoxItem>
+                    </ComboBox>
+                </StackPanel>
+            </DockPanel>
+        </Border>
 
-            <StackPanel Orientation="Horizontal" Grid.Column="0">
-                <Button x:Name="btnBuild" Margin="15 15 0 15" Padding="20,5,20,5" Click="btnBuild_Click">选择文件夹 &amp;&amp; 构建特征库</Button>
-                <Button x:Name="btnCleanup" Margin="15" Padding="20,5,20,5" Click="btnCleanup_Click">清理无效和重复文件</Button>
-            </StackPanel>
-
-            <StackPanel Orientation="Horizontal" Grid.Column="2" Margin="0,0,20,0">
-                <Button x:Name="btnRetrieval" Margin="15 15 0 15" Padding="20,5,20,5" Click="btnRetrieval_Click">选择图像以检索</Button>
-
-                <Label Margin="15 15 5 15" VerticalAlignment="Center">显示结果数</Label>
-
-                <ComboBox x:Name="cbReturnCount" IsEditable="True" Width="100" Height="25" SelectedIndex="0" Margin="0,0,5,0">
-                    <ComboBoxItem>10</ComboBoxItem>
-                    <ComboBoxItem>50</ComboBoxItem>
-                    <ComboBoxItem>100</ComboBoxItem>
-                </ComboBox>
-            </StackPanel>
-        </Grid>
-
+        <!-- ===== 主内容区：左右分栏 ===== -->
         <Grid Grid.Row="1" Margin="10">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="0.5*"/>
-                <ColumnDefinition Width="0.5*"/>                
+                <ColumnDefinition Width="3*" MinWidth="400"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="2*" MinWidth="200"/>
             </Grid.ColumnDefinitions>
-            <Image x:Name="imgSource" Stretch="Uniform" Margin="0 0 5 0"  Grid.Column="0"/>
-            <Image x:Name="imgSelected" Stretch="Uniform" Margin="5 0 0 0" Grid.Column="1"/>            
+
+            <!-- 左栏：查询图 + 结果列表 -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="180"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- 查询图区域（支持拖放 + 高亮反馈） -->
+                <Border x:Name="dropZone" Grid.Row="0" Margin="0,0,0,8"
+                        CornerRadius="6" BorderThickness="1"
+                        BorderBrush="{StaticResource SubtleBorderBrush}"
+                        AllowDrop="True"
+                        DragOver="QueryImage_DragOver"
+                        DragEnter="QueryImage_DragEnter"
+                        DragLeave="QueryImage_DragLeave"
+                        Drop="QueryImage_Drop"
+                        Background="Transparent">
+                    <Grid>
+                        <TextBlock Text="将图片拖放到此处，或点击「以图搜图」按钮"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="Gray" FontSize="13"
+                                   Visibility="{Binding Source, ElementName=imgSource,
+                                                Converter={StaticResource NullToVisibilityConverter}}"/>
+                        <Image x:Name="imgSource" Stretch="Uniform" Margin="5"/>
+                    </Grid>
+                </Border>
+
+                <!-- 检索结果列表（缩略图 + 相似度条） -->
+                <Border Grid.Row="1" CornerRadius="6" BorderThickness="1"
+                        BorderBrush="{StaticResource SubtleBorderBrush}">
+                    <DataGrid x:Name="dg1"
+                              AutoGenerateColumns="False" IsReadOnly="True"
+                              SelectionChanged="dg1_SelectionChanged"
+                              MouseDoubleClick="dg1_MouseDoubleClick"
+                              GridLinesVisibility="Horizontal"
+                              HeadersVisibility="Column"
+                              RowHeight="50">
+                        <DataGrid.Columns>
+                            <!-- 缩略图列 -->
+                            <DataGridTemplateColumn Header="" Width="56" CanUserResize="False">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Image Width="44" Height="44" Stretch="UniformToFill" Margin="2"
+                                               Source="{Binding Entity.Filename,
+                                                        Converter={StaticResource ThumbnailConverter}}"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <ui:DataGridTextColumn Header="相似度" Binding="{Binding Similarity, StringFormat=P2}" Width="80"/>
+                            <ui:DataGridTextColumn Header="文件名" Binding="{Binding Entity.Filename}" Width="*"/>
+                            <ui:DataGridTextColumn Header="描述" Binding="{Binding Entity.Caption}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+            </Grid>
+
+            <!-- 可拖拽分割条 -->
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
+                          Background="Transparent" Cursor="SizeWE"/>
+
+            <!-- 右栏：选中结果预览 -->
+            <Border Grid.Column="2" CornerRadius="6" BorderThickness="1"
+                    BorderBrush="{StaticResource SubtleBorderBrush}">
+                <Grid>
+                    <TextBlock Text="选择左侧结果以预览图片"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="Gray" FontSize="13"
+                               Visibility="{Binding Source, ElementName=imgSelected,
+                                            Converter={StaticResource NullToVisibilityConverter}}"/>
+                    <Image x:Name="imgSelected" Stretch="Uniform" Margin="5"/>
+                </Grid>
+            </Border>
         </Grid>
 
-        <Grid Grid.Row="2" Margin="10 0 10 5">
-            <Rectangle StrokeThickness="1" Stroke="{DynamicResource Accent}" RadiusX="5" RadiusY="5" Opacity="0.2"/>
-            <DataGrid x:Name="dg1"
-                      ItemsSource="{Binding}" 
-                      AutoGenerateColumns="False" IsReadOnly="True" SelectionChanged="dg1_SelectionChanged" MouseDoubleClick="dg1_MouseDoubleClick">
-                <DataGrid.Columns>
-                    <ui:DataGridTextColumn Header="相似度" Binding="{Binding Similarity}"/>
-                    <!--<ui:DataGridTextColumn Header="索引位置" Binding="{Binding Index}"/>-->
-                    <ui:DataGridTextColumn Header="文件名" Binding="{Binding Entity.Filename}"/>
-                    <ui:DataGridTextColumn Header="描述" Binding="{Binding Entity.Caption}"/>
-                </DataGrid.Columns>
-            </DataGrid>
-        </Grid>
-        
-
-        <!--<StatusBar Grid.Row="3">
+        <!-- ===== 底部状态栏 ===== -->
+        <StatusBar Grid.Row="2">
             <StatusBar.Background>
-                <LinearGradientBrush StartPoint="0, 0" EndPoint="0, 1" Opacity=".1">
-                    <GradientStop Offset="0" Color="Transparent" />                  
-                    <GradientStop Offset=".7" Color="{DynamicResource AccentColor}" />
-                    <GradientStop Offset="1" Color="{DynamicResource AccentColor}" />
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1" Opacity=".1">
+                    <GradientStop Offset="0" Color="Transparent"/>
+                    <GradientStop Offset=".7" Color="{DynamicResource AccentColor}"/>
+                    <GradientStop Offset="1" Color="{DynamicResource AccentColor}"/>
                 </LinearGradientBrush>
             </StatusBar.Background>
-            <ProgressBar x:Name="processBar1" Width="100" Height="15"/>
-            <Label x:Name="lblInfo">Status</Label>
-        </StatusBar>-->
-
-        <StatusBar Grid.Row="3">
-            <StatusBar.Background>
-                <LinearGradientBrush StartPoint="0, 0" EndPoint="0, 1" Opacity=".1">
-                    <GradientStop Offset="0" Color="Transparent" />
-                    <GradientStop Offset=".7" Color="{DynamicResource AccentColor}" />
-                    <GradientStop Offset="1" Color="{DynamicResource AccentColor}" />
-                </LinearGradientBrush>
-            </StatusBar.Background>
-
             <StatusBar.ItemsPanel>
                 <ItemsPanelTemplate>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                     </Grid>
                 </ItemsPanelTemplate>
             </StatusBar.ItemsPanel>
-
             <StatusBarItem Grid.Column="0">
-                <ProgressBar x:Name="processBar1" Width="100" Height="15"/>
+                <ProgressBar x:Name="processBar1" Width="120" Height="14" Visibility="Collapsed"/>
             </StatusBarItem>
             <StatusBarItem Grid.Column="1">
                 <Label x:Name="lblInfo">Status</Label>
-            </StatusBarItem>
-            <StatusBarItem Grid.Column="3" HorizontalAlignment="Right">
-                <StackPanel Orientation="Horizontal">
-                    <Label VerticalAlignment="Center" Padding="0,0,5,0">推理设备</Label>
-                    <ComboBox x:Name="cbDevice" Width="100" Height="23" SelectedIndex="0"
-                              SelectionChanged="cbDevice_SelectionChanged">
-                        <ComboBoxItem>CUDA</ComboBoxItem>
-                        <ComboBoxItem>CPU</ComboBoxItem>
-                    </ComboBox>
-                </StackPanel>
             </StatusBarItem>
         </StatusBar>
     </Grid>
