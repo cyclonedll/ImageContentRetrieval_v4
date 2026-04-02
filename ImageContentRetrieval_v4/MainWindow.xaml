@@ -1,0 +1,86 @@
+﻿<ui:RoundNormalWindow x:Class="ImageContentRetrieval_v4.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:ui="http://rui.Vorcyc.com/"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:ImageContentRetrieval_v4"
+        mc:Ignorable="d"
+        Height="600" Width="1000"
+        WindowStartupLocation="CenterScreen"
+        Title="Vorcyc Image Content Retrieval v4"
+        TitleLocation="Left">
+    <Window.Resources>
+  
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="160" />
+            <RowDefinition Height="auto" />
+        </Grid.RowDefinitions>
+
+         <!--顶部按钮-->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Orientation="Horizontal" Grid.Column="0">
+                <Button x:Name="btnBuild" Margin="15 15 0 15" Padding="20,5,20,5" Click="btnBuild_Click">选择文件夹 &amp;&amp; 构建特征库</Button>
+                <Button x:Name="btnCleanup" Margin="15" Padding="20,5,20,5" Click="btnCleanup_Click">清理无效和重复文件</Button>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Grid.Column="2" Margin="0,0,20,0">
+                <Button x:Name="btnRetrieval" Margin="15 15 0 15" Padding="20,5,20,5" Click="btnRetrieval_Click">选择图像以检索</Button>
+
+                <Label Margin="15 15 5 15" VerticalAlignment="Center">显示结果数</Label>
+
+                <ComboBox x:Name="cbReturnCount" IsEditable="True" Width="100" Height="25" SelectedIndex="0" Margin="0,0,5,0">
+                    <ComboBoxItem>10</ComboBoxItem>
+                    <ComboBoxItem>50</ComboBoxItem>
+                    <ComboBoxItem>100</ComboBoxItem>
+                </ComboBox>
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="0.5*"/>
+                <ColumnDefinition Width="0.5*"/>                
+            </Grid.ColumnDefinitions>
+            <Image x:Name="imgSource" Stretch="Uniform" Margin="0 0 5 0"  Grid.Column="0"/>
+            <Image x:Name="imgSelected" Stretch="Uniform" Margin="5 0 0 0" Grid.Column="1"/>            
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="10 0 10 5">
+            <Rectangle StrokeThickness="1" Stroke="{DynamicResource Accent}" RadiusX="5" RadiusY="5" Opacity="0.2"/>
+            <DataGrid x:Name="dg1"
+                      ItemsSource="{Binding}" 
+                      AutoGenerateColumns="False" IsReadOnly="True" SelectionChanged="dg1_SelectionChanged" MouseDoubleClick="dg1_MouseDoubleClick">
+                <DataGrid.Columns>
+                    <ui:DataGridTextColumn Header="相似度" Binding="{Binding Similarity}"/>
+                    <!--<ui:DataGridTextColumn Header="索引位置" Binding="{Binding Index}"/>-->
+                    <ui:DataGridTextColumn Header="文件名" Binding="{Binding Entity.Filename}"/>
+                    <ui:DataGridTextColumn Header="描述" Binding="{Binding Entity.Caption}"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Grid>
+        
+
+        <StatusBar Grid.Row="3">
+            <StatusBar.Background>
+                <LinearGradientBrush StartPoint="0, 0" EndPoint="0, 1" Opacity=".1">
+                    <GradientStop Offset="0" Color="Transparent" />                  
+                    <GradientStop Offset=".7" Color="{DynamicResource AccentColor}" />
+                    <GradientStop Offset="1" Color="{DynamicResource AccentColor}" />
+                </LinearGradientBrush>
+            </StatusBar.Background>
+            <ProgressBar x:Name="processBar1" Width="100" Height="15"/>
+            <Label x:Name="lblInfo">Status</Label>
+        </StatusBar>
+    </Grid>
+</ui:RoundNormalWindow>

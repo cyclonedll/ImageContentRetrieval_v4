@@ -1,0 +1,42 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net10.0-windows7.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<UseWPF>true</UseWPF>
+		<Description>A image content-based retrieval tool.</Description>
+		<Company>Vorcyc</Company>
+		<Authors>cyclone_dll</Authors>
+		<AssemblyVersion>4.0.0.0</AssemblyVersion>
+		<FileVersion>4.0.0.0</FileVersion>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Florence2" Version="25.12.63049" />
+		<PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu.Windows" Version="1.24.4" />
+		<PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+		<PackageReference Include="Vorcyc.Quiver" Version="1.1.2" />
+		<PackageReference Include="Vorcyc.RoundUI" Version="1.0.0" />
+		<PackageReference Include="WindowsAPICodePack" Version="8.0.15" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="model_zoo\DinoV2\domp_v2_q4.onnx">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="model_zoo\florence2\decoder_model_merged.onnx">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="model_zoo\florence2\embed_tokens.onnx">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="model_zoo\florence2\encoder_model.onnx">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="model_zoo\florence2\vision_encoder.onnx">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+</Project>
