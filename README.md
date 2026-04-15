@@ -11,7 +11,7 @@
 
 | 功能 | 说明 |
 |---|---|
-| **构建特征库** | 选择本地文件夹，自动扫描其中的 JPG / JPEG / JFIF / PNG 图像，提取视觉特征与文字描述并持久化存储 |
+| **构建特征库** | 选择本地文件夹，自动扫描其中的 JPG / JPEG / JFIF / PNG / WebP / BMP / GIF / TIFF / TGA 图像，提取视觉特征与文字描述并持久化存储 |
 | **以图搜图** | 选择一张查询图片，在已建库的图像中按相似度排序返回最匹配的结果（支持自定义返回数量） |
 | **拖放搜图** | 将图片文件直接拖放到查询区域，自动执行检索（带高亮反馈） |
 | **取消建库** | 支持中途取消建库操作，已处理的部分自动保存至数据库 |
@@ -88,7 +88,7 @@ ImageContentRetrieval_v4/
     |
 创建局部 SessionOptions + DinoV2Embedder + FlorencCaptioning
     |
-扫描图像文件（JPG / JPEG / JFIF / PNG）
+扫描图像文件（JPG / JPEG / JFIF / PNG / WebP / BMP / GIF / TIFF / TGA）
     |
 排除已建库文件（去重）
     |
@@ -104,7 +104,7 @@ ImageContentRetrieval_v4/
     |
 全部完成后最终保存至 Quiver 向量数据库
     |
-释放局部 Embedder 与 SessionOptions
+释放局部 Embedder（DinoV2Embedder + FlorencCaptioning）与 SessionOptions
 ```
 
 ### 检索流程

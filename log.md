@@ -174,7 +174,7 @@
 2. **在禁用界面之前**读取当前设备选项，创建一个 **局部** 的 `SessionOptions`——这一点很重要，因为一旦 UI 禁用了，ComboBox 也被禁用，读不到值
 3. 切换 UI 为建库状态（`SetBuildingUI(true)`）
 4. 创建局部的 `DinoV2Embedder` 和 `FlorencCaptioning`（Florence2 那个是异步工厂方法 `CreateAsync`，因为可能要下载模型）
-5. 扫描文件夹下所有子目录的图片文件（`*.jpg / *.jpeg / *.jfif / *.png`）
+5. 扫描文件夹下所有子目录的图片文件（通过 `SupportedWildcards` 统一管理，当前支持 `*.jpg / *.jpeg / *.jfif / *.png / *.webp / *.bmp / *.gif / *.tif / *.tiff / *.tga`）
 6. 用 `IOHelper.Except` 排除已建库的文件，物化成 List
 7. 然后 `Task.Run` 进后台线程遍历：
    - 每次循环先检查 `CancellationToken`
@@ -190,7 +190,7 @@
 
 **这里有几个我比较得意的设计决策：**
 
-- **建库用局部 Embedder，查询用全局 Embedder**。建库时 DINOv2 + Florence2 两个模型同时加载，显存压力很大；建库结束后局部资源通过 `using` 立即释放。查询的全局 Embedder 则一直驻留在显存里，避免每次查询都重新加载模型。两者互不干扰。
+- **建库用局部 Embedder，查询用全局 Embedder**。建库时 DINOv2 + Florence2 两个模型同时加载，显存压力很大；建库结束后局部资源通过 `using` 立即释放——`DinoV2Embedder` 直接 Dispose 其 `InferenceSession`，`FlorencCaptioning` 则通过反射释放 `Florence2Model` 内部的 4 个 `InferenceSession`（因为 `Florence2Model` 本身未实现 `IDisposable`）。查询的全局 Embedder 则一直驻留在显存里，避免每次查询都重新加载模型。两者互不干扰。
 
 - **每 200 条增量保存**。我考虑过 100 条或 500 条，最终选了 200——频繁保存会拖慢建库速度（每次保存都有磁盘 IO），但间隔太大又有数据丢失风险。200 条是我实测下来的一个平衡点。
 
@@ -251,7 +251,7 @@
 | `DragOver` | 检查 `DataFormats.FileDrop`，设置合适的 `DragDropEffects` |
 | `DragEnter` | 边框加粗到 2px + 半透明蓝灰背景 `Color.FromArgb(25, 85, 106, 120)` |
 | `DragLeave` | 恢复原样 |
-| `Drop` | 从拖入的文件列表里筛选第一个图片文件（忽略大小写匹配 .jpg/.jpeg/.jfif/.png），加载预览 + 执行检索 |
+| `Drop` | 从拖入的文件列表里筛选第一个图片文件（通过 `IsSupportedImage` 统一判断，忽略大小写），加载预览 + 执行检索 |
 
 高亮反馈的颜色我调了好几次，最后用了跟 AccentColor 同色系的半透明色，看起来协调又不突兀。
 
@@ -337,6 +337,23 @@ public static async Task<FlorencCaptioning> CreateAsync(SessionOptions options)
 4. 包装成 `FlorencCaptioning` 返回
 
 `GetCaption` 就很简单了——打开图片流，`Florence2Model.Run(TaskTypes.CAPTION, ...)`，取 `PureText`。
+
+### 7.3 显存释放——为什么要用反射
+
+`Florence2Model` 内部持有 4 个 `InferenceSession`（`_sessionDecoderMerged`、`_sessionEmbedTokens`、`_sessionEncoder`、`_sessionVisionEncoder`），每个都会占用大量显存。但 `Florence2Model` **没有实现 `IDisposable`**，建库结束后这些 session 不会被主动释放，导致显存一直被占着。
+
+我的解决方案是让 `FlorencCaptioning` 实现 `IDisposable`，在 `Dispose()` 里通过反射找到 `Florence2Model` 中所有 `InferenceSession` 类型的私有字段，逐一调用 `Dispose()`：
+
+```csharp
+var sessionFields = typeof(Florence2Model)
+    .GetFields(BindingFlags.NonPublic | BindingFlags.Instance)
+    .Where(f => f.FieldType == typeof(InferenceSession));
+
+foreach (var field in sessionFields)
+    (field.GetValue(_model) as IDisposable)?.Dispose();
+```
+
+这样在 `btnBuild_Click` 里 `using var captioning = await FlorencCaptioning.CreateAsync(...)` 就能在建库结束后立即释放全部 Florence2 显存。虽然用反射不太优雅，但在第三方库不提供 Dispose 的情况下这是最实用的办法。
 
 ---
 
@@ -472,6 +489,9 @@ ImageContentRetrieval_v4/
 | Shell API 定位文件而非 `explorer.exe /select` | `explorer.exe` 处理不了文件名里有 `?` `#` emoji 的路径，Shell API 走 PIDL 没这个问题 |
 | Florence2 用异步工厂 `CreateAsync` | 首次要下载模型，构造函数不能 async，只能用工厂 |
 | WAL + `WalFlushToDisk=false` | 要 WAL 保障写入安全，但不要立即刷盘——建库时写入太频繁，刷盘会严重拖慢速度 |
+| 支持 10 种图片格式（JPG/JPEG/JFIF/PNG/WebP/BMP/GIF/TIF/TIFF/TGA） | ImageSharp 3.x 原生支持这些格式的解码，覆盖了绝大多数常见图片场景；TGA 在游戏/3D 领域常见。WPF 预览端除 TGA 外均由 WIC 原生支持 |
+| 扩展名集中管理（`SupportedExtensions` / `SupportedWildcards` / `IsSupportedImage`） | 建库扫描、文件对话框、拖放过滤三处都要用到相同的扩展名列表，重复维护容易遗漏。抽成静态字段后增删格式只改一处 |
+| `FlorencCaptioning` 实现 `IDisposable`，反射释放 `Florence2Model` 内部 session | `Florence2Model` 未实现 `IDisposable`，其 4 个 `InferenceSession` 在建库后不会被释放，导致显存泄漏。通过反射访问私有字段是在第三方库不提供清理接口时的实用兜底方案 |
 
 ---
 
@@ -545,7 +565,7 @@ ImageContentRetrieval_v4/
 
 1. 工具栏右侧选推理设备（默认 CUDA，没 GPU 就选 CPU）
 2. 点「📁 构建特征库」或按 `Ctrl+B`
-3. 选一个图片文件夹——会递归扫描所有子目录下的 JPG/JPEG/JFIF/PNG
+3. 选一个图片文件夹——会递归扫描所有子目录下的 JPG/JPEG/JFIF/PNG/WebP/BMP/GIF/TIFF/TGA
 4. 等着就行：
    - 进度条和状态文字实时更新
    - 任务栏图标上也有进度条

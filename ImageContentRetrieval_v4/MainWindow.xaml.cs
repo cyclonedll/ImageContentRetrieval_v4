@@ -103,13 +103,12 @@ public partial class MainWindow : RoundNormalWindow
 
         // 构建专用的局部 Embedder，用完即释放
         using var buildEmbedder = new DinoV2Embedder(buildOptions);
-        var captioning = await FlorencCaptioning.CreateAsync(buildOptions);
+        using var captioning = await FlorencCaptioning.CreateAsync(buildOptions);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
         var folder = dialog.FileName;
-        var extensions = new[] { "*.jpg", "*.jpeg", "*.jfif", "*.png" };
-        var files = extensions.SelectMany(ext =>
+        var files = SupportedWildcards.SelectMany(ext =>
             Directory.EnumerateFiles(folder, ext, SearchOption.AllDirectories));
 
         // 一次性物化列表，避免重复枚举
@@ -196,7 +195,7 @@ public partial class MainWindow : RoundNormalWindow
 
         var ofd = new OpenFileDialog
         {
-            Filter = "JPG图像|*.jpg;*.jpeg;*.jfif;*.png|所有文件|*.*"
+            Filter = $"图像文件|{string.Join(";", SupportedWildcards)}|所有文件|*.*"
         };
 
         if (ofd.ShowDialog() == true)
@@ -337,11 +336,7 @@ public partial class MainWindow : RoundNormalWindow
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
 
         var files = (string[])e.Data.GetData(DataFormats.FileDrop)!;
-        var file = files.FirstOrDefault(f =>
-            f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
-            f.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
-            f.EndsWith(".jfif", StringComparison.OrdinalIgnoreCase) ||
-            f.EndsWith(".png", StringComparison.OrdinalIgnoreCase));
+        var file = files.FirstOrDefault(IsSupportedImage);
 
         if (file is null) return;
 
@@ -402,5 +397,12 @@ public partial class MainWindow : RoundNormalWindow
 
     #endregion
 
+    private static readonly string[] SupportedExtensions =
+    [".jpg", ".jpeg", ".jfif", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".tga"];
 
+    private static readonly string[] SupportedWildcards =
+        SupportedExtensions.Select(e => $"*{e}").ToArray();
+
+    private static bool IsSupportedImage(string path) =>
+        SupportedExtensions.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
 }
