@@ -237,6 +237,12 @@ public partial class MainWindow : RoundNormalWindow
         if (dg1.SelectedItem != null)
         {
             var row = (QuiverSearchResult<ImageDb>)dg1.SelectedItem;
+            if (!File.Exists(row.Entity.Filename))
+            {
+                imgSelected.Source = null;
+                MessageBox.Show($"文件已不存在：{row.Entity.Filename}", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             imgSelected.Source = ReadImage(row.Entity.Filename);
         }
     }
@@ -248,6 +254,11 @@ public partial class MainWindow : RoundNormalWindow
     {
         if (dg1.SelectedItem == null) return;
         var row = (QuiverSearchResult<ImageDb>)dg1.SelectedItem;
+        if (!File.Exists(row.Entity.Filename))
+        {
+            MessageBox.Show($"文件已不存在：{row.Entity.Filename}", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
         ShellFolderSelector.LocateFile(row.Entity.Filename);
     }
 
