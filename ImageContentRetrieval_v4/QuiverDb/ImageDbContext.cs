@@ -11,10 +11,12 @@ public class ImageDbContext : Vorcyc.Quiver.QuiverDbContext
 
     public ImageDbContext(string dbpath) :
         base(new QuiverDbOptions
-        {            
+        {
             DatabasePath = dbpath,
-            StorageFormat = StorageFormat.Binary,
-            DefaultMetric = DistanceMetric.Euclidean,           
+            EntityCache = EntityCacheMode.LazyPaging,
+            MaxCachedPages = 32,
+            PageSize = 512,
+            DefaultMetric = DistanceMetric.Cosine,
             EnableWal = true,
             WalCompactionThreshold = 1_0000,
             WalFlushToDisk = false
