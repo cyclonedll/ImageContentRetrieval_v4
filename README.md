@@ -3,6 +3,8 @@
 基于深度学习的**图像内容检索**（Content-Based Image Retrieval, CBIR）桌面应用程序。
 用户可以对本地图像文件夹建立特征库，然后通过选择一张查询图片，在特征库中检索出视觉上最相似的图像。
 
+这是该项目的第四版。上一版（v3）使用 Google **InceptionV3** 模型，提取瓶颈层（bottleneck layer）输出作为图像 embedding。v4 将特征提取器升级为 Facebook **DINOv2**——一个自监督视觉基础模型，其 CLS token 天生就是图像级语义表示（1024 维），无需微调即可用于相似度检索，在语义相似场景下效果远优于 InceptionV3 的瓶颈层特征。同时 v4 新增了 **Florence2** 图像描述生成能力，为每张图片自动生成英文 Caption。
+
 ---
 
 ## 功能概览
@@ -26,11 +28,11 @@
 
 - **框架**：.NET 10 / WPF（`net10.0-windows7.0`）
 - **UI 库**：[Vorcyc.RoundUI](https://www.nuget.org/packages/Vorcyc.RoundUI) — 圆角现代化 WPF 控件（Light 主题）
-- **图像特征提取**：[DINOv2](https://github.com/facebookresearch/dinov2)（量化 ONNX 模型 `domp_v2_q4.onnx`）— 输入 518×518，输出 1024 维 CLS token embedding（L2 归一化）
+- **图像特征提取**：[DINOv2](https://github.com/facebookresearch/dinov2)（量化 ONNX 模型 `domp_v2_q4.onnx`）— 输入 518×518，输出 1024 维 CLS token embedding（L2 归一化）。v4 从 v3 的 InceptionV3 瓶颈层升级而来，语义检索效果显著提升
 - **图像描述生成**：[Florence2](https://nuget.org/packages/Florence2) — 微软多模态大模型，自动生成图像文字描述（Caption）
 - **ONNX 推理**：[Microsoft.ML.OnnxRuntime.Gpu.Windows](https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime.Gpu.Windows)（支持 CUDA GPU 加速，可在运行时切换 CPU 回退）
 - **图像处理**：[SixLabors.ImageSharp](https://www.nuget.org/packages/SixLabors.ImageSharp) — 跨平台图像解码与预处理（Center Crop + ImageNet 归一化）
-- **向量数据库**：[Vorcyc.Quiver](https://www.nuget.org/packages/Vorcyc.Quiver) — 轻量级嵌入式向量数据库，支持向量相似度搜索（Binary 存储，WAL 写前日志）
+- **向量数据库**：[Vorcyc.Quiver](https://www.nuget.org/packages/Vorcyc.Quiver) — 作者刚完成的轻量级嵌入式向量数据库，支持向量相似度搜索（Binary 存储，WAL 写前日志）。本项目是 Quiver 的第一个实战场景，两者在开发过程中互相推动迭代
 - **系统集成**：[WindowsAPICodePack](https://www.nuget.org/packages/WindowsAPICodePack) — 文件夹选择对话框
 
 ### NuGet 依赖版本
@@ -40,9 +42,9 @@
 | Florence2 | 25.12.63049 |
 | Microsoft.ML.OnnxRuntime.Gpu.Windows | 1.24.4 |
 | SixLabors.ImageSharp | 3.1.12 |
-| Vorcyc.Quiver | 1.1.2 |
+| Vorcyc.Quiver | 2.0.0 |
 | Vorcyc.RoundUI | 1.0.0 |
-| WindowsAPICodePack | 8.0.15 |
+| WindowsAPICodePack | 8.0.15.1 |
 
 ---
 

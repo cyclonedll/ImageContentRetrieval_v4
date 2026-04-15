@@ -40,9 +40,9 @@
 | `Florence2` | 25.12.63049 | 微软的多模态大模型，能给图片生成描述，而且有现成的 NuGet 包，不用自己折腾模型加载 |
 | `Microsoft.ML.OnnxRuntime.Gpu.Windows` | 1.24.4 | ONNX 推理引擎，我需要 GPU 加速，这个包同时支持 CUDA 和 CPU 回退 |
 | `SixLabors.ImageSharp` | 3.1.12 | 跨平台图像处理，我用它做 Center Crop 和 ImageNet 归一化预处理 |
-| `Vorcyc.Quiver` | 1.1.2 | 我刚完成的一个轻量级嵌入式向量数据库，专门用来做向量相似度搜索。这个项目正好是 Quiver 的第一个实战场景——我一边开发 Quiver 一边拿这个项目验证，两边互相推动 |
+| `Vorcyc.Quiver` | 2.0.0 | 我刚完成的一个轻量级嵌入式向量数据库，专门用来做向量相似度搜索。这个项目正好是 Quiver 的第一个实战场景——我一边开发 Quiver 一边拿这个项目验证，两边互相推动 |
 | `Vorcyc.RoundUI` | 1.0.0 | 同样是我们自己的 WPF 控件库，圆角现代化风格，Light 主题 |
-| `WindowsAPICodePack` | 8.0.15 | 需要一个好看的文件夹选择对话框，WPF 自带的太丑了 |
+| `WindowsAPICodePack` | 8.0.15.1 | 需要一个好看的文件夹选择对话框，WPF 自带的太丑了 |
 
 ### 2.3 模型文件
 
@@ -458,6 +458,8 @@ ImageContentRetrieval_v4/
 
 | 我做了什么 | 我为什么这么做 |
 |---|---|
+| 从 InceptionV3 瓶颈层换到 DINOv2 CLS token | InceptionV3 是分类模型，瓶颈层特征为 ImageNet 分类优化，不是为检索设计的；DINOv2 是自监督视觉基础模型，CLS token 天生就是图像语义表示，检索效果好了一大截 |
+| 用 Vorcyc Quiver 替代 v3 的手搓文件存储 | v3 的暴力遍历在数据量大时太慢，Quiver 是我刚完成的嵌入式向量数据库，这个项目正好做它的第一个实战验证 |
 | 建库用局部 Embedder，查询用全局 Embedder | 建库时 DINOv2 + Florence2 两个大模型同时吃显存，用完必须释放；查询时只需要 DINOv2 一个模型，常驻显存免去反复加载的开销 |
 | 每 200 条增量保存 | 实测的平衡点——太频繁会拖慢建库（磁盘 IO），太稀疏万一中断就白干了 |
 | 支持 CancellationToken | 几万张图的文件夹建库可能要跑半小时+，用户必须能中途喊停 |
